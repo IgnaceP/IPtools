@@ -1,7 +1,7 @@
 import numpy as np
 from shapely.geometry import Polygon, MultiPolygon
 
-def addMiddlePoints(p1, p2, n ):
+def addMiddlePoints(p1, p2, n = 2):
     """ Function to calculate the middle point between two points
 
     Args:
