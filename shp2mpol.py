@@ -19,8 +19,9 @@ import numpy as np
 from pyproj import CRS
 from pol2pol import project, pol2Pol
 from pprint import pprint
+import pandas as pd
 
-def shp2Mpol(fn, get_fields = False ,return_coordinate_system = False, print_coordinate_system = False, print_n_features = False):
+def shp2Mpol(fn, get_fields = False ,return_coordinate_system = False, print_coordinate_system = False, print_n_features = False, include_centroid = False):
     """
     Function to load and (re)project one or multiple polygons from a ESRI shapefile
     ! the shapefile should only have one polygon per feature !
@@ -47,6 +48,16 @@ def shp2Mpol(fn, get_fields = False ,return_coordinate_system = False, print_coo
     file = ogr.Open(fn)
     shape = file.GetLayer(0)
 
+    if get_fields:
+        fieldnames = []
+        for n in range(shape.GetLayerDefn().GetFieldCount()):
+            if get_fields == 'All': fieldnames.append(shape.GetLayerDefn().GetFieldDefn(n).name)
+            else:
+                if n in get_fields: fieldnames.append(shape.GetLayerDefn().GetFieldDefn(n).name)
+        if get_fields == 'All': get_fields = list(np.arange(len(fieldnames), dtype = int))
+        if include_centroid: fieldnames.append('Centroid')
+
+
     epsg = int(shape.GetSpatialRef().ExportToPrettyWkt().splitlines()[-1].split('"')[3])
     crs = CRS.from_epsg(epsg)
     if print_coordinate_system:
@@ -69,22 +80,35 @@ def shp2Mpol(fn, get_fields = False ,return_coordinate_system = False, print_coo
         feature_JSON = feature.ExportToJson()
         feature_JSON = json.loads(feature_JSON)
 
-        if get_fields:
-            f = [feature.GetField(j) for j in get_fields]
-            fields.append(f)
 
         # create a shapely polygon
-        shp_geom = shapshape(feature_JSON["geometry"])
-        if type(shp_geom) == shMPol:
-            pol = shp_geom[0]
-        elif type(shp_geom) == shPol:
-            pol = shp_geom
-        else:
-            raise ValueError('Invalid input shapefile.')
-        pols.append(pol)
+        if feature_JSON["geometry"] != None:
+            shp_geom = shapshape(feature_JSON["geometry"])
+            if type(shp_geom) == shMPol:
+                pol = shp_geom[0]
+            elif type(shp_geom) == shPol:
+                pol = shp_geom
+            else:
+                raise ValueError('Invalid input shapefile.')
+            pols.append(pol)
+
+            if get_fields:
+                f = [feature.GetField(int(j)) for j in get_fields]
+                centroid_xy = np.asarray([arr[0] for arr in pol.centroid.xy])
+                if include_centroid: f.append(centroid_xy)
+                fields.append(f)
 
     # create a shapely MultiPolygon
     mpol = shMPol(pols)
+
+    # create a dataframe to store the fields
+    fields = np.asarray(fields)
+    df = {}
+
+    if get_fields:
+        for i in range(len(fieldnames)):
+            df[fieldnames[i]] = fields[:,i]
+        fields = pd.DataFrame(df)
 
     if return_coordinate_system:
         if len(pols)==1:
